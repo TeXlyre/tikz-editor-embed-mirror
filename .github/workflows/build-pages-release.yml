@@ -1,4 +1,4 @@
-name: Build TikZ editor embed
+name: Sync TikZ Editor Embed with Host
 
 on:
   workflow_dispatch:
@@ -16,15 +16,21 @@ permissions:
   pages: write
   id-token: write
 
+concurrency:
+  group: tikz-editor-embed-sync
+  cancel-in-progress: true
+
 env:
   TIKZ_EDITOR_REF: ${{ github.event.inputs.tikz_editor_ref || 'master' }}
 
 jobs:
-  build:
+  sync:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout mirror repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -36,6 +42,31 @@ jobs:
 
       - name: Build embed from upstream
         run: npm run build
+
+      - name: Sync generated folders to repository root
+        run: |
+          rm -rf tikz-editor host
+          cp -R dist/site/tikz-editor ./tikz-editor
+          cp -R dist/site/host ./host
+          cp dist/site/README.txt ./tikz-editor/README.txt
+          cp dist/site/.nojekyll ./.nojekyll
+
+      - name: Verify
+        run: |
+          test -f "tikz-editor/index.html" || (echo "MISSING: tikz-editor/index.html" && exit 1)
+          test -f "host/index.html" || (echo "MISSING: host/index.html" && exit 1)
+          test -f ".nojekyll" || (echo "MISSING: .nojekyll" && exit 1)
+          echo "✓ tikz-editor ready ($(find tikz-editor -type f | wc -l) files)"
+          echo "✓ host ready ($(find host -type f | wc -l) files)"
+
+      - name: Commit generated embed folders
+        if: github.ref_type != 'tag'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add tikz-editor/ host/ .nojekyll
+          git diff --staged --quiet || git commit -m "Update TikZ editor embed $(date +%Y-%m-%d)"
+          git push || true
 
       - name: Create release zip
         run: |
