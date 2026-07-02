@@ -1,11 +1,17 @@
 const frame = document.getElementById('tikzFrame');
 const source = document.getElementById('source');
 const log = document.getElementById('log');
+const MAX_LOG_ENTRIES = 100;
+const logEntries = [];
 
 function appendLog(label, payload) {
 	const at = new Date().toISOString();
 	const text = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
-	log.textContent += `[${at}] ${label}\n${text}\n\n`;
+	logEntries.push(`[${at}] ${label}\n${text}\n`);
+	while (logEntries.length > MAX_LOG_ENTRIES) {
+		logEntries.shift();
+	}
+	log.textContent = `${logEntries.join('\n')}\n`;
 	log.scrollTop = log.scrollHeight;
 }
 
@@ -44,5 +50,6 @@ document.getElementById('exportSvg').addEventListener('click', () => {
 });
 
 document.getElementById('clearLog').addEventListener('click', () => {
+	logEntries.length = 0;
 	log.textContent = '';
 });
