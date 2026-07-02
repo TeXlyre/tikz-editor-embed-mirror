@@ -19,7 +19,14 @@ type HostMessage = {
 	modified?: boolean;
 };
 
+type PendingEditorMessage = {
+	source: string;
+	svg: string;
+};
+
 const WORKSPACE_KEY = 'tikz-editor:workspace';
+const CHANGE_THROTTLE_MS = 250;
+const AUTOSAVE_DEBOUNCE_MS = 1000;
 const DEFAULT_SOURCE = String.raw`\begin{tikzpicture}
   \draw[thick, blue] (0,0) circle (1cm);
   \node at (0,0) {TikZ};
@@ -167,9 +174,54 @@ function loadIntoEditor(source: string, fileName = currentFileName) {
 function HostBridge() {
 	const previousSourceRef = useRef<string | null>(null);
 	const previousSvgRef = useRef<string>('');
+	const pendingChangeRef = useRef<PendingEditorMessage | null>(null);
+	const pendingAutosaveRef = useRef<PendingEditorMessage | null>(null);
+	const changeTimerRef = useRef<number | null>(null);
+	const autosaveTimerRef = useRef<number | null>(null);
 
 	useEffect(() => {
 		postToHost({ event: 'init', version: '0.5.2-texlyre.1' });
+
+		const flushChange = () => {
+			changeTimerRef.current = null;
+			const pending = pendingChangeRef.current;
+			pendingChangeRef.current = null;
+			if (!pending) return;
+			postToHost({ event: 'change', source: pending.source, xml: pending.source, svg: pending.svg });
+		};
+
+		const scheduleChange = (source: string, svg: string) => {
+			pendingChangeRef.current = { source, svg };
+			if (changeTimerRef.current !== null) return;
+			changeTimerRef.current = window.setTimeout(flushChange, CHANGE_THROTTLE_MS);
+		};
+
+		const flushAutosave = () => {
+			autosaveTimerRef.current = null;
+			const pending = pendingAutosaveRef.current;
+			pendingAutosaveRef.current = null;
+			if (!pending) return;
+			postToHost({ event: 'autosave', source: pending.source, xml: pending.source, svg: pending.svg });
+		};
+
+		const scheduleAutosave = (source: string, svg: string) => {
+			pendingAutosaveRef.current = { source, svg };
+			if (autosaveTimerRef.current !== null) {
+				window.clearTimeout(autosaveTimerRef.current);
+			}
+			autosaveTimerRef.current = window.setTimeout(flushAutosave, AUTOSAVE_DEBOUNCE_MS);
+		};
+
+		const flushPendingEditorMessages = () => {
+			if (changeTimerRef.current !== null) {
+				window.clearTimeout(changeTimerRef.current);
+				flushChange();
+			}
+			if (autosaveTimerRef.current !== null) {
+				window.clearTimeout(autosaveTimerRef.current);
+				flushAutosave();
+			}
+		};
 
 		const unsubscribe = useEditorStore.subscribe((state) => {
 			const nextSvg = state.snapshot.svg?.svg ?? '';
@@ -184,9 +236,9 @@ function HostBridge() {
 			}
 			if (state.source === previousSourceRef.current) return;
 			previousSourceRef.current = state.source;
-			postToHost({ event: 'change', source: state.source, xml: state.source, svg: lastKnownSvg });
+			scheduleChange(state.source, lastKnownSvg);
 			if (autosaveEnabled) {
-				postToHost({ event: 'autosave', source: state.source, xml: state.source, svg: lastKnownSvg });
+				scheduleAutosave(state.source, lastKnownSvg);
 			}
 		});
 
@@ -201,13 +253,17 @@ function HostBridge() {
 			const action = message.action || message.event;
 			if (action === 'load') {
 				autosaveEnabled = Boolean(message.autosave);
+				pendingChangeRef.current = null;
+				pendingAutosaveRef.current = null;
 				loadIntoEditor(sourceFromMessage(message) ?? DEFAULT_SOURCE, message.fileName ?? message.name ?? currentFileName);
 			} else if (action === 'save') {
+				flushPendingEditorMessages();
 				const source = useEditorStore.getState().source;
 				lastSavedSource = source;
 				useEditorStore.getState().dispatch({ type: 'MARK_DOCUMENT_SAVED', fileRef: makeFileRef(currentFileName), lastKnownDiskSource: source });
 				postToHost({ event: 'save', source, xml: source, svg: lastKnownSvg, fileName: currentFileName });
 			} else if (action === 'export') {
+				flushPendingEditorMessages();
 				postToHost(makeExportPayload(message.format));
 			} else if (action === 'status' && typeof message.modified === 'boolean' && !message.modified) {
 				useEditorStore.getState().dispatch({ type: 'MARK_DOCUMENT_SAVED', fileRef: makeFileRef(currentFileName), lastKnownDiskSource: useEditorStore.getState().source });
@@ -218,6 +274,8 @@ function HostBridge() {
 		return () => {
 			unsubscribe();
 			window.removeEventListener('message', handleMessage);
+			if (changeTimerRef.current !== null) window.clearTimeout(changeTimerRef.current);
+			if (autosaveTimerRef.current !== null) window.clearTimeout(autosaveTimerRef.current);
 		};
 	}, []);
 
