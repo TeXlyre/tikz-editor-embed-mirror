@@ -36,6 +36,11 @@ async function cloneUpstream() {
 
 async function installEmbedWorkspace() {
 	await fs.copy(path.join(repoRoot, 'embed'), embedAppDir);
+	const tag = 'script';
+	await fs.outputFile(
+		path.join(embedAppDir, 'index.html'),
+		'<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>TikZ Editor Embed</title></head><body><div id="root"></div><' + tag + ' type="module" src="/src/main.tsx"></' + tag + '></body></html>\n',
+	);
 }
 
 async function installAndBuild() {
