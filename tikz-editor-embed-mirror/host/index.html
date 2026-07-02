@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>TeXlyre TikZ Editor Embed Host</title>
+		<link rel="stylesheet" href="./styles.css" />
+	</head>
+	<body>
+		<header>
+			<h1>TeXlyre TikZ Editor Embed Host</h1>
+			<p>This page verifies the iframe/postMessage API used by TeXlyre.</p>
+		</header>
+
+		<main>
+			<section class="controls">
+				<label for="source">Host-side source</label>
+				<textarea id="source" spellcheck="false">\begin{tikzpicture}
+  \draw[thick, red] (0,0) rectangle (2,1);
+  \node at (1,0.5) {Hello TeXlyre};
+\end{tikzpicture}
+</textarea>
+				<div class="buttons">
+					<button id="load">Load into iframe</button>
+					<button id="save">Request save</button>
+					<button id="exportSvg">Request SVG export</button>
+					<button id="clearLog">Clear log</button>
+				</div>
+				<h2>Messages</h2>
+				<pre id="log"></pre>
+			</section>
+
+			<section class="frame-section">
+				<iframe
+					id="tikzFrame"
+					src="../tikz-editor/index.html"
+					title="TikZ editor embed"
+					allow="clipboard-read; clipboard-write"
+				></iframe>
+			</section>
+		</main>
+
+		<script src="./host.js"></script>
+	</body>
+</html>

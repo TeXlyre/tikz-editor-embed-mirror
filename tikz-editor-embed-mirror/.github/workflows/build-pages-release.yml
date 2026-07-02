@@ -1,0 +1,76 @@
+name: Build TikZ editor embed
+
+on:
+  workflow_dispatch:
+    inputs:
+      tikz_editor_ref:
+        description: Upstream DominikPeters/tikz-editor ref to build
+        required: false
+        default: master
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+env:
+  TIKZ_EDITOR_REF: ${{ github.event.inputs.tikz_editor_ref || 'master' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout mirror repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install mirror dependencies
+        run: npm install
+
+      - name: Build embed from upstream
+        run: npm run build
+
+      - name: Create release zip
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then VERSION="preview-${GITHUB_SHA::7}"; fi
+          cd dist/site
+          zip -r "../tikz-editor-embed-${VERSION}.zip" tikz-editor host README.txt .nojekyll
+          echo "ZIP_PATH=dist/tikz-editor-embed-${VERSION}.zip" >> "$GITHUB_ENV"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tikz-editor-embed
+          path: |
+            dist/site
+            ${{ env.ZIP_PATH }}
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/site
+
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Publish GitHub release for tags
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "$ZIP_PATH" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --notes "Static TikZ editor embed asset for TeXlyre. Built from DominikPeters/tikz-editor ref: ${TIKZ_EDITOR_REF}."

@@ -1,0 +1,14 @@
+{
+  "name": "tikz-editor-embed-mirror",
+  "private": true,
+  "version": "0.5.2-texlyre.1",
+  "type": "module",
+  "description": "Static embeddable TikZ editor bundle for TeXlyre core assets.",
+  "scripts": {
+    "build": "node scripts/build-from-upstream.cjs",
+    "clean": "rm -rf .build dist"
+  },
+  "devDependencies": {
+    "fs-extra": "^11.3.0"
+  }
+}
