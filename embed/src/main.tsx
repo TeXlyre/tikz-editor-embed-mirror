@@ -41,6 +41,37 @@ function sourceFromMessage(message: HostMessage): string | null {
 	return null;
 }
 
+function wantsSvg(format?: string) {
+	return typeof format === 'string' && format.toLowerCase().includes('svg');
+}
+
+function makeExportPayload(format: string | undefined) {
+	const source = useEditorStore.getState().source;
+	const requestedSvg = wantsSvg(format);
+	const data = requestedSvg ? lastKnownSvg : source;
+
+	if (requestedSvg && !lastKnownSvg.trim()) {
+		return {
+			event: 'export',
+			format: format ?? 'svg',
+			error: 'SVG is not ready yet. Wait for the preview to finish rendering and try again.',
+			source,
+			xml: source,
+			svg: '',
+			data: '',
+		};
+	}
+
+	return {
+		event: 'export',
+		format: format ?? 'tikz',
+		data,
+		source,
+		xml: source,
+		svg: lastKnownSvg,
+	};
+}
+
 function makeFileRef(name = currentFileName): DocumentFileRef {
 	return { kind: 'virtual', name };
 }
@@ -115,7 +146,8 @@ function createEmbedPlatform(initialSource: string): EditorPlatform {
 				return { status: 'saved', fileRef: makeFileRef(currentFileName) };
 			},
 			exportFile: async (content, options) => {
-				postToHost({ event: 'export', format: options.mimeType, fileName: options.fileName, data: content, source: useEditorStore.getState().source, xml: useEditorStore.getState().source, svg: lastKnownSvg });
+				const format = options.mimeType || options.fileName;
+				postToHost(wantsSvg(format) ? makeExportPayload(format) : { ...makeExportPayload(format), data: content });
 				return true;
 			},
 		},
@@ -125,6 +157,7 @@ function createEmbedPlatform(initialSource: string): EditorPlatform {
 function loadIntoEditor(source: string, fileName = currentFileName) {
 	currentFileName = fileName;
 	lastSavedSource = source;
+	lastKnownSvg = '';
 	const store = useEditorStore.getState();
 	store.dispatch({ type: 'CODE_EDITED', source });
 	store.dispatch({ type: 'MARK_DOCUMENT_SAVED', fileRef: makeFileRef(fileName), lastKnownDiskSource: source });
@@ -133,18 +166,24 @@ function loadIntoEditor(source: string, fileName = currentFileName) {
 
 function HostBridge() {
 	const previousSourceRef = useRef<string | null>(null);
+	const previousSvgRef = useRef<string>('');
 
 	useEffect(() => {
 		postToHost({ event: 'init', version: '0.5.2-texlyre.1' });
 
 		const unsubscribe = useEditorStore.subscribe((state) => {
+			const nextSvg = state.snapshot.svg?.svg ?? '';
+			if (nextSvg && nextSvg !== previousSvgRef.current) {
+				previousSvgRef.current = nextSvg;
+				lastKnownSvg = nextSvg;
+			}
+
 			if (previousSourceRef.current === null) {
 				previousSourceRef.current = state.source;
 				return;
 			}
 			if (state.source === previousSourceRef.current) return;
 			previousSourceRef.current = state.source;
-			lastKnownSvg = state.snapshot.svg?.svg ?? lastKnownSvg;
 			postToHost({ event: 'change', source: state.source, xml: state.source, svg: lastKnownSvg });
 			if (autosaveEnabled) {
 				postToHost({ event: 'autosave', source: state.source, xml: state.source, svg: lastKnownSvg });
@@ -169,8 +208,7 @@ function HostBridge() {
 				useEditorStore.getState().dispatch({ type: 'MARK_DOCUMENT_SAVED', fileRef: makeFileRef(currentFileName), lastKnownDiskSource: source });
 				postToHost({ event: 'save', source, xml: source, svg: lastKnownSvg, fileName: currentFileName });
 			} else if (action === 'export') {
-				const source = useEditorStore.getState().source;
-				postToHost({ event: 'export', format: message.format ?? 'tikz', data: source, source, xml: source, svg: lastKnownSvg });
+				postToHost(makeExportPayload(message.format));
 			} else if (action === 'status' && typeof message.modified === 'boolean' && !message.modified) {
 				useEditorStore.getState().dispatch({ type: 'MARK_DOCUMENT_SAVED', fileRef: makeFileRef(currentFileName), lastKnownDiskSource: useEditorStore.getState().source });
 			}
