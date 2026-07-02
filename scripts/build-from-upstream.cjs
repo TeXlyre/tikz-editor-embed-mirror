@@ -138,11 +138,11 @@ type RenderState = {
 	diagnostics: string[];
 };
 
-const DEFAULT_SOURCE = String.raw`\\begin{tikzpicture}
+const DEFAULT_SOURCE = String.raw\`\\begin{tikzpicture}
   \\draw[thick, blue] (0,0) circle (1cm);
   \\node at (0,0) {TikZ};
 \\end{tikzpicture}
-`;
+\`;
 
 function postToHost(message: Record<string, unknown>) {
 	window.parent?.postMessage(JSON.stringify(message), '*');
