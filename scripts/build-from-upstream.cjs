@@ -5,10 +5,6 @@
  * Output:
  *   dist/site/tikz-editor/  - asset folder consumed by TeXlyre public/core/tikz-editor
  *   dist/site/host/         - GitHub Pages verification host
- *
- * Environment:
- *   TIKZ_EDITOR_REF         - branch/tag/commit to build, default: master
- *   TIKZ_EDITOR_REPO        - upstream git URL, default: https://github.com/DominikPeters/tikz-editor.git
  */
 
 const fs = require('fs-extra');
@@ -62,7 +58,6 @@ async function createEmbedWorkspace() {
 			'@codemirror/commands': '^6.10.2',
 			'@codemirror/state': '^6.5.4',
 			'@codemirror/view': '^6.39.14',
-			'@tikz-editor/core': '0.5.2',
 			'@tikz-editor/lang-tikz': '0.5.2',
 			codemirror: '^6.0.2',
 			react: '^19.0.0',
@@ -96,6 +91,7 @@ async function createEmbedWorkspace() {
 		path.join(embedAppDir, 'vite.config.ts'),
 		`import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import path from 'node:path';
 
 export default defineConfig({
 	plugins: [react()],
@@ -104,6 +100,13 @@ export default defineConfig({
 		outDir: 'dist',
 		emptyOutDir: true,
 		target: 'es2022',
+	},
+	resolve: {
+		alias: {
+			'@tikz-editor/lang-tikz': path.resolve(__dirname, '../../packages/lang-tikz/src/index.ts'),
+			'@tikz-editor/lezer-tikz': path.resolve(__dirname, '../../packages/lezer-tikz/src/index.ts'),
+			'tikz-editor': path.resolve(__dirname, '../../packages/core/src'),
+		},
 	},
 });
 `,
@@ -118,7 +121,7 @@ import { Compartment, EditorState } from '@codemirror/state';
 import { keymap } from '@codemirror/view';
 import { indentWithTab } from '@codemirror/commands';
 import { tikzLanguage } from '@tikz-editor/lang-tikz';
-import { renderTikzToSvgAsync } from '@tikz-editor/core';
+import { renderTikzToSvgAsync } from 'tikz-editor/render';
 import './styles.css';
 
 type HostMessage = {
@@ -272,12 +275,7 @@ function App() {
 	useEffect(() => { autosaveRef.current = autosave; }, [autosave]);
 
 	const emitSave = useCallback((event = 'save') => {
-		postToHost({
-			event,
-			source: sourceRef.current,
-			xml: sourceRef.current,
-			svg: renderStateRef.current.svg,
-		});
+		postToHost({ event, source: sourceRef.current, xml: sourceRef.current, svg: renderStateRef.current.svg });
 		setHasChanges(false);
 	}, []);
 
@@ -304,25 +302,15 @@ function App() {
 				postToHost({ event: 'loaded' });
 				return;
 			}
-
 			if (action === 'export') {
 				const format = message.format || 'svg';
-				postToHost({
-					event: 'export',
-					format,
-					data: format === 'tex' || format === 'tikz' ? sourceRef.current : renderStateRef.current.svg,
-					source: sourceRef.current,
-					xml: sourceRef.current,
-					svg: renderStateRef.current.svg,
-				});
+				postToHost({ event: 'export', format, data: format === 'tex' || format === 'tikz' ? sourceRef.current : renderStateRef.current.svg, source: sourceRef.current, xml: sourceRef.current, svg: renderStateRef.current.svg });
 				return;
 			}
-
 			if (action === 'save') {
 				emitSave('save');
 				return;
 			}
-
 			if (action === 'status' && typeof message.modified === 'boolean') {
 				setHasChanges(message.modified);
 			}
@@ -338,12 +326,7 @@ function App() {
 		postToHost({ event: 'change', source: nextSource, xml: nextSource });
 		if (autosaveRef.current) {
 			window.setTimeout(() => {
-				postToHost({
-					event: 'autosave',
-					source: sourceRef.current,
-					xml: sourceRef.current,
-					svg: renderStateRef.current.svg,
-				});
+				postToHost({ event: 'autosave', source: sourceRef.current, xml: sourceRef.current, svg: renderStateRef.current.svg });
 			}, 0);
 		}
 	};
@@ -358,15 +341,11 @@ function App() {
 				<button type="button" onClick={() => postToHost({ event: 'export', format: 'svg', data: renderState.svg, source, xml: source, svg: renderState.svg })}>Export SVG</button>
 			</header>
 			<main className="main">
-				<section className="pane source-pane">
-					<CodeEditor source={source} onChange={handleChange} onSave={() => emitSave('save')} />
-				</section>
+				<section className="pane source-pane"><CodeEditor source={source} onChange={handleChange} onSave={() => emitSave('save')} /></section>
 				<section className="pane preview-pane">
-					<div className="preview-status">{renderState.status === 'rendering' ? 'Rendering…' : renderState.status}</div>
+					<div className="preview-status">{renderState.status === 'rendering' ? 'Rendering...' : renderState.status}</div>
 					{renderState.error ? <pre className="error">{renderState.error}</pre> : null}
-					{renderState.diagnostics.length > 0 ? (
-						<ul className="diagnostics">{renderState.diagnostics.map((item, index) => <li key={index}>{item}</li>)}</ul>
-					) : null}
+					{renderState.diagnostics.length > 0 ? <ul className="diagnostics">{renderState.diagnostics.map((item, index) => <li key={index}>{item}</li>)}</ul> : null}
 					<div className="svg-preview" dangerouslySetInnerHTML={{ __html: renderState.svg }} />
 				</section>
 			</main>
@@ -378,55 +357,15 @@ createRoot(document.getElementById('root')!).render(<App />);
 `,
 	);
 
-	await fs.outputFile(
-		path.join(embedAppDir, 'src', 'styles.css'),
-		`html, body, #root {
-	margin: 0;
-	width: 100%;
-	height: 100%;
-	font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-	background: #111827;
-	color: #e5e7eb;
-}
-
-.embed-shell {
-	display: flex;
-	flex-direction: column;
-	width: 100%;
-	height: 100%;
-	min-height: 0;
-}
-
-.toolbar {
-	display: flex;
-	align-items: center;
-	gap: 0.75rem;
-	padding: 0.5rem 0.75rem;
-	border-bottom: 1px solid #374151;
-	background: #0f172a;
-}
-
-.toolbar button {
-	border: 1px solid #4b5563;
-	border-radius: 0.375rem;
-	background: #1f2937;
-	color: #f9fafb;
-	padding: 0.35rem 0.6rem;
-	cursor: pointer;
-}
-
+	await fs.outputFile(path.join(embedAppDir, 'src', 'styles.css'), `html, body, #root { margin: 0; width: 100%; height: 100%; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #111827; color: #e5e7eb; }
+.embed-shell { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; }
+.toolbar { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0.75rem; border-bottom: 1px solid #374151; background: #0f172a; }
+.toolbar button { border: 1px solid #4b5563; border-radius: 0.375rem; background: #1f2937; color: #f9fafb; padding: 0.35rem 0.6rem; cursor: pointer; }
 .toolbar button:hover { background: #374151; }
 .spacer { flex: 1; }
 .clean { color: #86efac; }
 .dirty { color: #fbbf24; }
-
-.main {
-	display: grid;
-	grid-template-columns: minmax(18rem, 1fr) minmax(18rem, 1fr);
-	min-height: 0;
-	flex: 1;
-}
-
+.main { display: grid; grid-template-columns: minmax(18rem, 1fr) minmax(18rem, 1fr); min-height: 0; flex: 1; }
 .pane { min-width: 0; min-height: 0; }
 .source-pane { border-right: 1px solid #374151; }
 .code-editor { height: 100%; }
@@ -434,50 +373,13 @@ createRoot(document.getElementById('root')!).render(<App />);
 .cm-gutters { background: #0f172a !important; color: #94a3b8 !important; border-right-color: #334155 !important; }
 .cm-activeLine, .cm-activeLineGutter { background: rgba(148, 163, 184, 0.12) !important; }
 .cm-scroller { font-family: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
-
-.preview-pane {
-	position: relative;
-	display: flex;
-	flex-direction: column;
-	background: #f8fafc;
-	color: #111827;
-}
-.preview-status {
-	padding: 0.35rem 0.6rem;
-	font-size: 0.75rem;
-	color: #475569;
-	border-bottom: 1px solid #e2e8f0;
-	background: #ffffff;
-}
-.svg-preview {
-	flex: 1;
-	min-height: 0;
-	overflow: auto;
-	display: grid;
-	place-items: center;
-	padding: 1rem;
-}
-.svg-preview svg {
-	max-width: 100%;
-	max-height: 100%;
-	background: white;
-	box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
-}
-.error, .diagnostics {
-	margin: 0.75rem;
-	padding: 0.75rem;
-	border-radius: 0.375rem;
-	background: #fee2e2;
-	color: #7f1d1d;
-	white-space: pre-wrap;
-}
-
-@media (max-width: 760px) {
-	.main { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
-	.source-pane { border-right: 0; border-bottom: 1px solid #374151; }
-}
-`,
-	);
+.preview-pane { position: relative; display: flex; flex-direction: column; background: #f8fafc; color: #111827; }
+.preview-status { padding: 0.35rem 0.6rem; font-size: 0.75rem; color: #475569; border-bottom: 1px solid #e2e8f0; background: #ffffff; }
+.svg-preview { flex: 1; min-height: 0; overflow: auto; display: grid; place-items: center; padding: 1rem; }
+.svg-preview svg { max-width: 100%; max-height: 100%; background: white; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18); }
+.error, .diagnostics { margin: 0.75rem; padding: 0.75rem; border-radius: 0.375rem; background: #fee2e2; color: #7f1d1d; white-space: pre-wrap; }
+@media (max-width: 760px) { .main { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; } .source-pane { border-right: 0; border-bottom: 1px solid #374151; } }
+`);
 }
 
 async function installAndBuild() {
@@ -494,10 +396,7 @@ async function copyOutputs() {
 	await fs.copy(path.join(embedAppDir, 'dist'), path.join(outRoot, 'tikz-editor'));
 	await fs.copy(path.join(repoRoot, 'host'), path.join(outRoot, 'host'));
 	await fs.outputFile(path.join(outRoot, '.nojekyll'), '');
-	await fs.outputFile(
-		path.join(outRoot, 'README.txt'),
-		`This folder is generated by tikz-editor-embed-mirror.\n\nTeXlyre asset path: public/core/tikz-editor/\nGitHub Pages verification host: /host/\nBuilt from: ${upstreamRepo} @ ${upstreamRef}\n`,
-	);
+	await fs.outputFile(path.join(outRoot, 'README.txt'), `This folder is generated by tikz-editor-embed-mirror.\n\nTeXlyre asset path: public/core/tikz-editor/\nGitHub Pages verification host: /host/\nBuilt from: ${upstreamRepo} @ ${upstreamRef}\n`);
 }
 
 async function main() {
@@ -505,7 +404,7 @@ async function main() {
 	await createEmbedWorkspace();
 	await installAndBuild();
 	await copyOutputs();
-	console.log('\n✅ Built dist/site with tikz-editor/ and host/');
+	console.log('\nBuilt dist/site with tikz-editor/ and host/');
 }
 
 main().catch((error) => {
