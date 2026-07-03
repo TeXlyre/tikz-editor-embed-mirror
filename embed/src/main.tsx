@@ -1,11 +1,15 @@
-import { StrictMode, useEffect, useRef } from 'react';
+import { StrictMode, Suspense, lazy, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
-import { App } from '@tikz-editor/app';
 import { setActiveEditorPlatform } from '@tikz-editor/app/platform/current';
 import { useEditorStore } from '@tikz-editor/app/store';
 import type { EditorPlatform } from '@tikz-editor/app/platform/types';
 import type { DocumentFileRef } from '@tikz-editor/app/store/types';
 import './styles.css';
+
+const App = lazy(async () => {
+	const mod = await import('@tikz-editor/app');
+	return { default: mod.App };
+});
 
 type HostSettingsPatch = {
 	general?: {
@@ -382,6 +386,8 @@ setActiveEditorPlatform(createEmbedPlatform(DEFAULT_SOURCE));
 createRoot(document.getElementById('root')!).render(
 	<StrictMode>
 		<HostBridge />
-		<App />
+		<Suspense fallback={null}>
+			<App />
+		</Suspense>
 	</StrictMode>,
 );
