@@ -2,10 +2,20 @@ import { StrictMode, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from '@tikz-editor/app';
 import { setActiveEditorPlatform } from '@tikz-editor/app/platform/current';
+import type { AppSettings } from '@tikz-editor/app/settings/types';
+import { useSettingsStore } from '@tikz-editor/app/settings/useSettingsStore';
 import { useEditorStore } from '@tikz-editor/app/store';
 import type { EditorPlatform } from '@tikz-editor/app/platform/types';
 import type { DocumentFileRef } from '@tikz-editor/app/store/types';
 import './styles.css';
+
+type HostSettingsPatch = {
+	general?: Partial<AppSettings['general']>;
+	editor?: Partial<AppSettings['editor']>;
+	canvas?: Partial<AppSettings['canvas']>;
+	colorPicker?: Partial<AppSettings['colorPicker']>;
+	rendering?: Partial<AppSettings['rendering']>;
+};
 
 type HostMessage = {
 	action?: string;
@@ -17,6 +27,7 @@ type HostMessage = {
 	fileName?: string;
 	name?: string;
 	modified?: boolean;
+	settings?: HostSettingsPatch;
 };
 
 type PendingEditorMessage = {
@@ -51,6 +62,17 @@ function sourceFromMessage(message: HostMessage): string | null {
 
 function wantsSvg(format?: string) {
 	return typeof format === 'string' && format.toLowerCase().includes('svg');
+}
+
+function applyHostSettings(settings?: HostSettingsPatch) {
+	if (!settings) return;
+
+	const settingsStore = useSettingsStore.getState();
+	if (settings.general) settingsStore.updateGeneralSettings(settings.general);
+	if (settings.editor) settingsStore.updateEditorSettings(settings.editor);
+	if (settings.canvas) settingsStore.updateCanvasSettings(settings.canvas);
+	if (settings.colorPicker) settingsStore.updateColorPickerSettings(settings.colorPicker);
+	if (settings.rendering) settingsStore.updateRenderingSettings(settings.rendering);
 }
 
 function makeExportPayload(format: string | undefined) {
@@ -307,10 +329,13 @@ function HostBridge() {
 			if (!message) return;
 			const action = message.action || message.event;
 			if (action === 'load') {
+				applyHostSettings(message.settings);
 				autosaveEnabled = Boolean(message.autosave);
 				pendingChangeRef.current = null;
 				pendingAutosaveRef.current = null;
 				loadIntoEditor(sourceFromMessage(message) ?? DEFAULT_SOURCE, message.fileName ?? message.name ?? currentFileName);
+			} else if (action === 'settings') {
+				applyHostSettings(message.settings);
 			} else if (action === 'save') {
 				flushPendingEditorMessages();
 				const source = useEditorStore.getState().source;
