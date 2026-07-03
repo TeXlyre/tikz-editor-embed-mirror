@@ -2,7 +2,15 @@ const frame = document.getElementById('tikzFrame');
 const source = document.getElementById('source');
 const log = document.getElementById('log');
 const MAX_LOG_ENTRIES = 100;
+const STORAGE_KEY = 'texlyre:tikz-editor:storage';
 const logEntries = [];
+
+function getFrameSrc() {
+	const storage = window.localStorage.getItem(STORAGE_KEY);
+	return `../tikz-editor/index.html${storage ? `#storage=${encodeURIComponent(storage)}` : ''}`;
+}
+
+frame.src = getFrameSrc();
 
 function appendLog(label, payload) {
 	const at = new Date().toISOString();
@@ -28,6 +36,11 @@ window.addEventListener('message', (event) => {
 	appendLog('IFRAME → HOST', payload);
 
 	if (payload && typeof payload === 'object') {
+		if (payload.event === 'persistence-save' && typeof payload.key === 'string' && typeof payload.value === 'string') {
+			const storage = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '{}');
+			storage[payload.key] = payload.value;
+			window.localStorage.setItem(STORAGE_KEY, JSON.stringify(storage));
+		}
 		if (payload.event === 'init') {
 			post({ action: 'load', source: source.value, autosave: 1 });
 		}
