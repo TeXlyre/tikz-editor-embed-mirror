@@ -2,19 +2,16 @@ import { StrictMode, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from '@tikz-editor/app';
 import { setActiveEditorPlatform } from '@tikz-editor/app/platform/current';
-import type { AppSettings } from '@tikz-editor/app/settings/types';
-import { useSettingsStore } from '@tikz-editor/app/settings/useSettingsStore';
 import { useEditorStore } from '@tikz-editor/app/store';
 import type { EditorPlatform } from '@tikz-editor/app/platform/types';
 import type { DocumentFileRef } from '@tikz-editor/app/store/types';
 import './styles.css';
 
 type HostSettingsPatch = {
-	general?: Partial<AppSettings['general']>;
-	editor?: Partial<AppSettings['editor']>;
-	canvas?: Partial<AppSettings['canvas']>;
-	colorPicker?: Partial<AppSettings['colorPicker']>;
-	rendering?: Partial<AppSettings['rendering']>;
+	general?: {
+		colorScheme?: 'system' | 'light' | 'dark';
+		canvasInvert?: boolean;
+	};
 };
 
 type HostMessage = {
@@ -65,14 +62,22 @@ function wantsSvg(format?: string) {
 }
 
 function applyHostSettings(settings?: HostSettingsPatch) {
-	if (!settings) return;
+	const general = settings?.general;
+	if (!general) return;
 
-	const settingsStore = useSettingsStore.getState();
-	if (settings.general) settingsStore.updateGeneralSettings(settings.general);
-	if (settings.editor) settingsStore.updateEditorSettings(settings.editor);
-	if (settings.canvas) settingsStore.updateCanvasSettings(settings.canvas);
-	if (settings.colorPicker) settingsStore.updateColorPickerSettings(settings.colorPicker);
-	if (settings.rendering) settingsStore.updateRenderingSettings(settings.rendering);
+	if (general.colorScheme === 'light' || general.colorScheme === 'dark') {
+		document.documentElement.dataset.colorScheme = general.colorScheme;
+	} else if (general.colorScheme === 'system') {
+		delete document.documentElement.dataset.colorScheme;
+	}
+
+	if (typeof general.canvasInvert === 'boolean') {
+		if (general.canvasInvert) {
+			document.documentElement.dataset.canvasInvert = 'true';
+		} else {
+			delete document.documentElement.dataset.canvasInvert;
+		}
+	}
 }
 
 function makeExportPayload(format: string | undefined) {
