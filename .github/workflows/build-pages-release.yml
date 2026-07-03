@@ -9,7 +9,6 @@ on:
         default: master
   push:
     branches: [main]
-    tags: ['v*']
 
 permissions:
   contents: write
