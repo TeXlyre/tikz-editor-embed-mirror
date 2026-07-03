@@ -33,6 +33,7 @@ type PendingEditorMessage = {
 };
 
 const WORKSPACE_KEY = 'tikz-editor:workspace';
+const STORAGE_HASH_KEY = 'storage';
 const CHANGE_THROTTLE_MS = 250;
 const AUTOSAVE_DEBOUNCE_MS = 1000;
 const TEXT_FILE_ACCEPT = '.tex,.tikz,.pgf,.svg,.ipe,text/plain,text/x-tex,text/xml,application/xml,image/svg+xml';
@@ -188,11 +189,20 @@ function makeWorkspaceSeed(source: string, fileName = currentFileName) {
 
 function createMemoryPersistence(initialSource: string): EditorPlatform['persistence'] {
 	const values = new Map<string, string>();
+	const seededStorage = new URLSearchParams(window.location.hash.slice(1)).get(STORAGE_HASH_KEY);
+	if (seededStorage) {
+		try {
+			Object.entries(JSON.parse(seededStorage) as Record<string, string>).forEach(([key, value]) => {
+				if (key !== WORKSPACE_KEY && typeof value === 'string') values.set(key, value);
+			});
+		} catch {}
+	}
 	values.set(WORKSPACE_KEY, makeWorkspaceSeed(initialSource));
 	return {
 		load: (key) => values.get(key) ?? null,
 		save: (key, value) => {
 			values.set(key, value);
+			if (key !== WORKSPACE_KEY) postToHost({ event: 'persistence-save', key, value });
 		},
 	};
 }
