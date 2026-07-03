@@ -155,7 +155,10 @@ function createEmbedPlatform(initialSource: string): EditorPlatform {
 			exportFile: async (content, options) => {
 				const format = options.mimeType || options.fileName;
 				postToHost(wantsSvg(format) ? makeExportPayload(format) : { ...makeExportPayload(format), data: content });
-				return true;
+
+				// Returning false keeps the upstream browser download fallback active for menu exports.
+				// Parent-initiated exports still use the explicit `action: export` message path below.
+				return false;
 			},
 		},
 	};
