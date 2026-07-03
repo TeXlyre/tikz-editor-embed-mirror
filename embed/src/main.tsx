@@ -27,6 +27,7 @@ type PendingEditorMessage = {
 const WORKSPACE_KEY = 'tikz-editor:workspace';
 const CHANGE_THROTTLE_MS = 250;
 const AUTOSAVE_DEBOUNCE_MS = 1000;
+const TEXT_FILE_ACCEPT = '.tex,.tikz,.pgf,.svg,.ipe,text/plain,text/x-tex,text/xml,application/xml,image/svg+xml';
 const DEFAULT_SOURCE = String.raw`\begin{tikzpicture}
   \draw[thick, blue] (0,0) circle (1cm);
   \node at (0,0) {TikZ};
@@ -81,6 +82,57 @@ function makeExportPayload(format: string | undefined) {
 
 function makeFileRef(name = currentFileName): DocumentFileRef {
 	return { kind: 'virtual', name };
+}
+
+function openTextFileWithPicker(): Promise<{ source: string; fileRef: DocumentFileRef | null } | null> {
+	if (typeof document === 'undefined' || typeof FileReader === 'undefined') return Promise.resolve(null);
+
+	return new Promise((resolve) => {
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.accept = TEXT_FILE_ACCEPT;
+		input.style.display = 'none';
+
+		let settled = false;
+		let changed = false;
+
+		const finish = (result: { source: string; fileRef: DocumentFileRef | null } | null) => {
+			if (settled) return;
+			settled = true;
+			window.removeEventListener('focus', handleFocus);
+			input.remove();
+			resolve(result);
+		};
+
+		const handleFocus = () => {
+			window.setTimeout(() => {
+				if (!changed) finish(null);
+			}, 300);
+		};
+
+		input.addEventListener('change', () => {
+			changed = true;
+			const file = input.files?.[0];
+			if (!file) {
+				finish(null);
+				return;
+			}
+
+			const reader = new FileReader();
+			reader.onerror = () => finish(null);
+			reader.onload = () => {
+				finish({
+					source: typeof reader.result === 'string' ? reader.result : '',
+					fileRef: makeFileRef(file.name || currentFileName),
+				});
+			};
+			reader.readAsText(file);
+		}, { once: true });
+
+		document.body.appendChild(input);
+		window.addEventListener('focus', handleFocus, { once: true });
+		input.click();
+	});
 }
 
 function makeWorkspaceSeed(source: string, fileName = currentFileName) {
@@ -145,7 +197,7 @@ function createEmbedPlatform(initialSource: string): EditorPlatform {
 			},
 		},
 		files: {
-			openText: async () => ({ source: lastSavedSource, fileRef: makeFileRef() }),
+			openText: async () => openTextFileWithPicker(),
 			saveText: async (text, options) => {
 				lastSavedSource = text;
 				currentFileName = options?.suggestedName ?? options?.fileRef?.name ?? currentFileName;
