@@ -37,7 +37,9 @@ type PendingEditorMessage = {
 };
 
 const WORKSPACE_KEY = 'tikz-editor:workspace';
+const SETTINGS_KEY = 'tikz-editor:settings';
 const STORAGE_HASH_KEY = 'storage';
+const SETTINGS_VERSION = 1;
 const CHANGE_THROTTLE_MS = 250;
 const AUTOSAVE_DEBOUNCE_MS = 1000;
 const TEXT_FILE_ACCEPT = '.tex,.tikz,.pgf,.svg,.ipe,text/plain,text/x-tex,text/xml,application/xml,image/svg+xml';
@@ -51,6 +53,7 @@ let autosaveEnabled = false;
 let lastSavedSource = DEFAULT_SOURCE;
 let lastKnownSvg = '';
 let currentFileName = 'document.tikz';
+const persistenceValues = new Map<string, string>();
 
 function postToHost(message: Record<string, unknown>) {
 	window.parent?.postMessage(JSON.stringify(message), '*');
@@ -64,6 +67,39 @@ function sourceFromMessage(message: HostMessage): string | null {
 
 function wantsSvg(format?: string) {
 	return typeof format === 'string' && format.toLowerCase().includes('svg');
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function persistHostSettings(settings?: HostSettingsPatch) {
+	if (!settings?.general) return;
+
+	const currentRaw = persistenceValues.get(SETTINGS_KEY);
+	let currentSettings: Record<string, unknown> = {};
+	try {
+		const parsed = currentRaw ? JSON.parse(currentRaw) as unknown : null;
+		if (isRecord(parsed) && isRecord(parsed.settings)) {
+			currentSettings = parsed.settings;
+		}
+	} catch {}
+
+	const currentGeneral = isRecord(currentSettings.general) ? currentSettings.general : {};
+	const nextRaw = JSON.stringify({
+		settingsVersion: SETTINGS_VERSION,
+		settings: {
+			...currentSettings,
+			general: {
+				...currentGeneral,
+				...settings.general,
+			},
+		},
+	});
+
+	if (nextRaw === currentRaw) return;
+	persistenceValues.set(SETTINGS_KEY, nextRaw);
+	postToHost({ event: 'persistence-save', key: SETTINGS_KEY, value: nextRaw });
 }
 
 function applyHostSettings(settings?: HostSettingsPatch) {
@@ -192,20 +228,20 @@ function makeWorkspaceSeed(source: string, fileName = currentFileName) {
 }
 
 function createMemoryPersistence(initialSource: string): EditorPlatform['persistence'] {
-	const values = new Map<string, string>();
+	persistenceValues.clear();
 	const seededStorage = new URLSearchParams(window.location.hash.slice(1)).get(STORAGE_HASH_KEY);
 	if (seededStorage) {
 		try {
 			Object.entries(JSON.parse(seededStorage) as Record<string, string>).forEach(([key, value]) => {
-				if (key !== WORKSPACE_KEY && typeof value === 'string') values.set(key, value);
+				if (key !== WORKSPACE_KEY && typeof value === 'string') persistenceValues.set(key, value);
 			});
 		} catch {}
 	}
-	values.set(WORKSPACE_KEY, makeWorkspaceSeed(initialSource));
+	persistenceValues.set(WORKSPACE_KEY, makeWorkspaceSeed(initialSource));
 	return {
-		load: (key) => values.get(key) ?? null,
+		load: (key) => persistenceValues.get(key) ?? null,
 		save: (key, value) => {
-			values.set(key, value);
+			persistenceValues.set(key, value);
 			if (key !== WORKSPACE_KEY) postToHost({ event: 'persistence-save', key, value });
 		},
 	};
@@ -349,12 +385,14 @@ function HostBridge() {
 			const action = message.action || message.event;
 			if (action === 'load') {
 				applyHostSettings(message.settings);
+				persistHostSettings(message.settings);
 				autosaveEnabled = Boolean(message.autosave);
 				pendingChangeRef.current = null;
 				pendingAutosaveRef.current = null;
 				loadIntoEditor(sourceFromMessage(message) ?? DEFAULT_SOURCE, message.fileName ?? message.name ?? currentFileName);
 			} else if (action === 'settings') {
 				applyHostSettings(message.settings);
+				persistHostSettings(message.settings);
 			} else if (action === 'save') {
 				flushPendingEditorMessages();
 				const source = useEditorStore.getState().source;
