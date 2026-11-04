@@ -7,6 +7,10 @@ on:
         description: Upstream DominikPeters/tikz-editor ref to build
         required: false
         default: master
+      release_tag:
+        description: Optional release tag (leave empty to generate a versioned sync tag)
+        required: false
+        default: ''
   push:
     branches: [main]
 
@@ -65,15 +69,28 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add tikz-editor/ host/ .nojekyll
           git diff --staged --quiet || git commit -m "Update TikZ editor embed $(date +%Y-%m-%d)"
-          git push || true
+          git push
+
+      - name: Resolve archive and release tag
+        env:
+          REQUESTED_TAG: ${{ inputs.release_tag }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG="${REQUESTED_TAG:-v$(node -p "require('./package.json').version")-sync.${GITHUB_RUN_NUMBER}}"
+            if [[ ! "$TAG" =~ ^v[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
+              echo "::error::Invalid release tag: $TAG"
+              exit 1
+            fi
+          else
+            TAG="preview-${GITHUB_SHA::7}"
+          fi
+          echo "ARCHIVE_TAG=$TAG" >> "$GITHUB_ENV"
 
       - name: Create release zip
         run: |
-          VERSION="${GITHUB_REF_NAME}"
-          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then VERSION="preview-${GITHUB_SHA::7}"; fi
           cd dist/site
-          zip -r "../tikz-editor-embed-${VERSION}.zip" tikz-editor host README.txt .nojekyll
-          echo "ZIP_PATH=dist/tikz-editor-embed-${VERSION}.zip" >> "$GITHUB_ENV"
+          zip -r "../tikz-editor-embed-${ARCHIVE_TAG}.zip" tikz-editor host README.txt .nojekyll
+          echo "ZIP_PATH=dist/tikz-editor-embed-${ARCHIVE_TAG}.zip" >> "$GITHUB_ENV"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -95,12 +112,19 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
 
-      - name: Publish GitHub release for tags
-        if: github.ref_type == 'tag'
+      - name: Tag and publish manual sync release
+        if: github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" "$ZIP_PATH" \
+          if git ls-remote --exit-code --tags origin "refs/tags/$ARCHIVE_TAG" > /dev/null; then
+            echo "::error::Release tag already exists: $ARCHIVE_TAG"
+            exit 1
+          fi
+          # Tag the generated-assets commit, not the commit initially checked out.
+          git tag "$ARCHIVE_TAG" HEAD
+          git push origin "refs/tags/$ARCHIVE_TAG"
+          gh release create "$ARCHIVE_TAG" "$ZIP_PATH" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "$GITHUB_REF_NAME" \
+            --title "$ARCHIVE_TAG" \
             --notes "Static TikZ editor embed asset for TeXlyre. Built from DominikPeters/tikz-editor ref: ${TIKZ_EDITOR_REF}."
