@@ -36,6 +36,14 @@ async function cloneUpstream() {
 
 async function installEmbedWorkspace() {
 	await fs.copy(path.join(repoRoot, 'embed'), embedAppDir);
+
+	// Upstream lists its npm workspaces explicitly; register the injected app before install.
+	const manifestPath = path.join(upstreamDir, 'package.json');
+	const manifest = await fs.readJson(manifestPath);
+	if (!Array.isArray(manifest.workspaces)) throw new Error('Unexpected upstream workspace configuration');
+	manifest.workspaces = [...new Set([...manifest.workspaces, 'apps/texlyre-embed'])];
+	await fs.writeJson(manifestPath, manifest, { spaces: 2 });
+
 	const tag = 'script';
 	await fs.outputFile(
 		path.join(embedAppDir, 'index.html'),
@@ -45,9 +53,8 @@ async function installEmbedWorkspace() {
 
 async function installAndBuild() {
 	await run('npm', ['install'], { cwd: upstreamDir });
-	await run('npm', ['run', '-w', '@tikz-editor/lezer-tikz', 'build'], { cwd: upstreamDir });
-	await run('npm', ['run', '-w', '@tikz-editor/lang-tikz', 'build'], { cwd: upstreamDir });
-	await run('npm', ['run', '-w', '@tikz-editor/core', 'build'], { cwd: upstreamDir });
+	// Let upstream build its packages in dependency order (including lezer-tex).
+	await run('npm', ['run', 'build'], { cwd: upstreamDir });
 	await run('npm', ['run', '-w', '@texlyre/tikz-editor-embed', 'build'], { cwd: upstreamDir });
 }
 

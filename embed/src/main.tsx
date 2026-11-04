@@ -1,7 +1,6 @@
 import { StrictMode, Suspense, lazy, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { setActiveEditorPlatform } from '@tikz-editor/app/platform/current';
-import { useEditorStore } from '@tikz-editor/app/store';
 import type { EditorPlatform } from '@tikz-editor/app/platform/types';
 import type { DocumentFileRef } from '@tikz-editor/app/store/types';
 import './styles.css';
@@ -36,10 +35,13 @@ type PendingEditorMessage = {
 	svg: string;
 };
 
+// Import the stores only after registering our platform; both read persistence at module load.
+let useEditorStore: typeof import('@tikz-editor/app/store').useEditorStore;
+let useSettingsStore: typeof import('@tikz-editor/app/settings/useSettingsStore').useSettingsStore;
+
 const WORKSPACE_KEY = 'tikz-editor:workspace';
 const SETTINGS_KEY = 'tikz-editor:settings';
 const STORAGE_HASH_KEY = 'storage';
-const SETTINGS_VERSION = 1;
 const CHANGE_THROTTLE_MS = 250;
 const AUTOSAVE_DEBOUNCE_MS = 1000;
 const TEXT_FILE_ACCEPT = '.tex,.tikz,.pgf,.svg,.ipe,text/plain,text/x-tex,text/xml,application/xml,image/svg+xml';
@@ -69,37 +71,11 @@ function wantsSvg(format?: string) {
 	return typeof format === 'string' && format.toLowerCase().includes('svg');
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return value != null && typeof value === 'object' && !Array.isArray(value);
-}
-
 function persistHostSettings(settings?: HostSettingsPatch) {
-	if (!settings?.general) return;
-
-	const currentRaw = persistenceValues.get(SETTINGS_KEY);
-	let currentSettings: Record<string, unknown> = {};
-	try {
-		const parsed = currentRaw ? JSON.parse(currentRaw) as unknown : null;
-		if (isRecord(parsed) && isRecord(parsed.settings)) {
-			currentSettings = parsed.settings;
-		}
-	} catch {}
-
-	const currentGeneral = isRecord(currentSettings.general) ? currentSettings.general : {};
-	const nextRaw = JSON.stringify({
-		settingsVersion: SETTINGS_VERSION,
-		settings: {
-			...currentSettings,
-			general: {
-				...currentGeneral,
-				...settings.general,
-			},
-		},
-	});
-
-	if (nextRaw === currentRaw) return;
-	persistenceValues.set(SETTINGS_KEY, nextRaw);
-	postToHost({ event: 'persistence-save', key: SETTINGS_KEY, value: nextRaw });
+	if (settings?.general) {
+		// Update the live UI as well as the persisted settings sent to TeXlyre.
+		useSettingsStore.getState().updateGeneralSettings(settings.general);
+	}
 }
 
 function applyHostSettings(settings?: HostSettingsPatch) {
@@ -205,13 +181,13 @@ function openTextFileWithPicker(): Promise<{ source: string; fileRef: DocumentFi
 
 function makeWorkspaceSeed(source: string, fileName = currentFileName) {
 	return JSON.stringify({
-		workspaceVersion: 2,
+		workspaceVersion: 4,
 		documents: [{
 			id: 'texlyre-document',
 			title: fileName,
 			source,
 			savedSource: source,
-			activeFigureId: null,
+			activeRootId: null,
 			fileRef: makeFileRef(fileName),
 			diskRevision: null,
 			lastKnownDiskSource: source,
@@ -282,12 +258,27 @@ function createEmbedPlatform(initialSource: string): EditorPlatform {
 				return { status: 'saved', fileRef: makeFileRef(currentFileName) };
 			},
 			exportFile: async (content, options) => {
-				const format = options.mimeType || options.fileName;
-				postToHost(wantsSvg(format) ? makeExportPayload(format) : { ...makeExportPayload(format), data: content });
-
-				// Returning false keeps the upstream browser download fallback active for menu exports.
-				// Parent-initiated exports still use the explicit `action: export` message path below.
-				return false;
+				const blob = new Blob(content, { type: options.mimeType });
+				const isSvg = wantsSvg(options.mimeType) || /\\.svg$/i.test(options.fileName);
+				const isText = options.mimeType.startsWith('text/') || isSvg ||
+					/(?:xml|json)/i.test(options.mimeType) || /\\.(?:tex|tikz|pgf|ipe)$/i.test(options.fileName);
+				if (isText) {
+					const data = await blob.text();
+					const source = useEditorStore.getState().source;
+					postToHost({ event: 'export', format: isSvg ? 'svg' : 'tex',
+						data, source, xml: source, svg: isSvg ? data : lastKnownSvg });
+				} else {
+					// Keep binary exports (for example PNG/PDF) as browser downloads.
+					const url = URL.createObjectURL(blob);
+					const link = document.createElement('a');
+					link.href = url;
+					link.download = options.fileName;
+					document.body.appendChild(link);
+					link.click();
+					link.remove();
+					window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+				}
+				return true;
 			},
 		},
 	};
@@ -356,8 +347,9 @@ function HostBridge() {
 		};
 
 		const unsubscribe = useEditorStore.subscribe((state) => {
-			const nextSvg = state.snapshot.svg?.svg ?? '';
-			if (nextSvg && nextSvg !== previousSvgRef.current) {
+			// Do not expose an SVG from a previous source revision while rendering.
+			const nextSvg = state.snapshot.source === state.source ? state.snapshot.svg?.svg ?? '' : '';
+			if (nextSvg !== previousSvgRef.current) {
 				previousSvgRef.current = nextSvg;
 				lastKnownSvg = nextSvg;
 			}
@@ -419,13 +411,19 @@ function HostBridge() {
 	return null;
 }
 
-setActiveEditorPlatform(createEmbedPlatform(DEFAULT_SOURCE));
+async function bootstrap() {
+	setActiveEditorPlatform(createEmbedPlatform(DEFAULT_SOURCE));
+	({ useEditorStore } = await import('@tikz-editor/app/store'));
+	({ useSettingsStore } = await import('@tikz-editor/app/settings/useSettingsStore'));
 
-createRoot(document.getElementById('root')!).render(
-	<StrictMode>
-		<HostBridge />
-		<Suspense fallback={null}>
-			<App />
-		</Suspense>
-	</StrictMode>,
-);
+	createRoot(document.getElementById('root')!).render(
+		<StrictMode>
+			<HostBridge />
+			<Suspense fallback={null}>
+				<App />
+			</Suspense>
+		</StrictMode>,
+	);
+}
+
+void bootstrap();
