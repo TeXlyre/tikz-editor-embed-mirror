@@ -1,0 +1,27 @@
+import{r as F,P as a}from"./store-0OkdYWaE.js";import"./index-as5MBA9q.js";import"./react-Dpv8rxul.js";function C(i,t){const s=t.parseResult?.diagnostics??[],e=t.semanticResult?.diagnostics??[],c=[...s,...e];if(c.length===0)return null;const r=i.split(`
+`),n=o=>{let l=1;for(let d=0;d<o&&d<i.length;d++)i[d]===`
+`&&l++;return l};return c.map(o=>{const l=n(o.span.from),d=o.code?` [${o.code}]`:"",u=r[l-1],x=u?` | ${u.trimStart()}`:"";return`${o.severity} (line ${l})${d}: ${o.message}${x}`}).join(`
+`)}function P(i,t){const s=t.figures;if(s.length<=1)return null;const e=t.activeRootId,c=s.findIndex(u=>u.id===e);if(c<0)return null;const r=F(s,c),n=i.slice(r.span.from,r.span.to),o=i.slice(0,r.span.from).split(`
+`).length,l=n.split(`
+`).map((u,x)=>`${o+x}: ${u}`).join(`
+`),d=s.map((u,x)=>{const f=x===c?" (active)":"";return`  Figure ${x+1}: lines ${u.startLine}–${u.endLine}${f}`}).join(`
+`);return`This document contains ${s.length} figures:
+${d}
+
+The user is currently editing figure ${c+1}.
+
+Active figure source (with line numbers from the full document):
+\`\`\`tex
+${l}
+\`\`\`
+
+The full document source is in the file you will edit. Only modify the active figure unless the user asks otherwise. All tools accept a \`figure_index\` parameter (1-indexed) to query any figure; omit it to use the active figure.`}function j(i,t){const s=t.scene;if(!s||s.elements.length===0)return"No elements in the current scene.";const e=i.split(`
+`),c=n=>{let o=1;for(let l=0;l<n&&l<i.length;l++)i[l]===`
+`&&o++;return o},r=s.elements.map(n=>{const o=c(n.sourceRef.sourceSpan.from),l=c(n.sourceRef.sourceSpan.to),d=o===l?`line ${o}`:`lines ${o}–${l}`,u=n.style.stroke??"none",x=n.style.fill??"none";let f=`  sourceId: ${n.sourceRef.sourceId}, kind: ${n.kind}, ${d}, stroke: ${u}, fill: ${x}`;if(n.kind==="Text"){const m=b(i,n.sourceRef.sourceSpan.from,n.sourceRef.sourceSpan.to),h=(n.position.x/a).toFixed(2),g=(n.position.y/a).toFixed(2);f+=`, center: (${h}, ${g})`,m&&(f+=`, name: "${m}"`),n.text&&(f+=`, text: "${n.text}"`)}else if(n.kind==="Circle"){const m=(n.center.x/a).toFixed(2),h=(n.center.y/a).toFixed(2),g=(n.radius/a).toFixed(2);f+=`, center: (${m}, ${h}), radius: ${g}`}else if(n.kind==="Ellipse"){const m=(n.center.x/a).toFixed(2),h=(n.center.y/a).toFixed(2);f+=`, center: (${m}, ${h})`}const w=e[o-1];if(w){const m=w.trimStart();m.length<=80?f+=`
+    ${m}`:f+=`
+    ${m.slice(0,77)}...`}return f});return`${s.elements.length} element(s):
+${r.join(`
+`)}`}function b(i,t,s){const e=i.slice(t,s);return/\(([a-zA-Z_][\w.-]*)\)/.exec(e)?.[1]??null}function A(i,t){const s=i.semanticResult?.nodeAnchorTargets??[],e=s.filter(r=>r.nodeName===t);if(e.length===0)return`No node named "${t}" found. Available nodes: ${[...new Set(s.map(r=>r.nodeName))].join(", ")||"none"}`;const c=e.map(r=>{const n=(r.world.x/a).toFixed(3),o=(r.world.y/a).toFixed(3);return`  ${r.anchor}: (${n}, ${o})`});return`Anchors for node "${t}" (in cm):
+${c.join(`
+`)}`}function B(i){const t=i.scene?.bounds;if(!t)return"No scene bounds available (scene may be empty).";const s=(t.minX/a).toFixed(3),e=(t.minY/a).toFixed(3),c=(t.maxX/a).toFixed(3),r=(t.maxY/a).toFixed(3),n=((t.maxX-t.minX)/a).toFixed(3),o=((t.maxY-t.minY)/a).toFixed(3);return`Scene bounds (cm): x: [${s}, ${c}], y: [${e}, ${r}], size: ${n} × ${o}`}function v(i,t){return t.y+t.height-(i-t.y)}function M(i,t){return t.y+t.height-i+t.y}function N(i,t){let{svg:s,viewBox:e}=i;const c=e;if(t.zoomRegion){const n=t.zoomRegion,o=n.min_x*a,l=n.max_x*a,d=v(n.max_y*a,c),u=v(n.min_y*a,c);e={x:o,y:d,width:l-o,height:u-d}}let r="";if(t.showGrid){const n=t.showGrid.spacing??1,o=t.showGrid.color??"#cccccc",l=e.x/a,d=(e.x+e.width)/a,u=M(e.y,c)/a,x=M(e.y+e.height,c)/a,f=Math.floor(l/n)*n,w=Math.ceil(d/n)*n,m=Math.floor(x/n)*n,h=Math.ceil(u/n)*n,g=[],k=[],p=Math.max(4,Math.min(10,n*a*.3));for(let $=f;$<=w;$=T($+n,n)){const y=$*a;g.push(`<line x1="${y}" y1="${e.y}" x2="${y}" y2="${e.y+e.height}" stroke="${o}" stroke-width="0.4" />`);const z=e.y+e.height-p*.3;k.push(`<text x="${y+p*.15}" y="${z}" font-size="${p}" fill="${o}" font-family="sans-serif">${Y($)}</text>`)}for(let $=m;$<=h;$=T($+n,n)){const y=v($*a,c);g.push(`<line x1="${e.x}" y1="${y}" x2="${e.x+e.width}" y2="${y}" stroke="${o}" stroke-width="0.4" />`),k.push(`<text x="${e.x+p*.15}" y="${y-p*.15}" font-size="${p}" fill="${o}" font-family="sans-serif">${Y($)}</text>`)}r=`<g class="assistant-grid" opacity="0.6">${g.join("")}${k.join("")}</g>`}return(r||t.zoomRegion)&&(s=s.replace(/viewBox="[^"]*"/,`viewBox="${e.x} ${e.y} ${e.width} ${e.height}"`),r&&(s=s.replace(/<\/svg>\s*$/,`${r}</svg>`))),{...i,svg:s,viewBox:e,model:I(i.model,e,r)}}function T(i,t){return Math.round(i/t)*t}function Y(i){const t=Math.round(i*1e3)/1e3;return Number.isInteger(t)?String(t):t.toFixed(1)}function I(i,t,s){const e=[...i.parts];if(s){const r={partId:L(e),sourceId:"__assistant_tool__",elementId:null,order:e.length,markup:s,fingerprint:s};e.push(r)}return{...i,viewBox:t,parts:e}}function L(i){const t="assistant-grid",s=new Set(i.map(c=>c.partId));if(!s.has(t))return t;let e=2;for(;s.has(`${t}#${e}`);)e+=1;return`${t}#${e}`}function E(i,t,s){const e=s?i.slice(s.from,s.to):i,c=s?s.from:0,r=/\\end\{tikzpicture\*?\}/g;let n=null,o;for(;(o=r.exec(e))!==null;)n=o;if(!n)return i;const l=c+n.index;return i.slice(0,l)+t+`
+`+i.slice(l)}export{N as applyPreviewEnhancements,B as buildBoundsText,C as buildDiagnosticsText,j as buildElementList,P as buildFigureContext,A as buildNodeAnchors,E as injectOverlayCode};
